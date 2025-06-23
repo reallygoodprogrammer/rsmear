@@ -1,5 +1,5 @@
 use clap::Parser;
-use image::{open};
+use image::open;
 use rand::Rng;
 
 #[derive(Parser)]
@@ -15,16 +15,25 @@ struct Args {
     output_file: String,
     #[arg(short, long, default_value_t = 0.5, help = "chance of smear per pixel")]
     chance: f32,
-    #[arg(long, default_value_t = 200.0, help = "max height of smear")]
-    s_height: f32,
-    #[arg(long, default_value_t = 1.0, help = "max width of smear")]
-    s_width: f32,
-    #[arg(long, default_value_t = false, help = "allow blending calculations to overflow")]
-    allow_overflow: bool,
+    #[arg(long, default_value_t = 10, help = "max height of smear")]
+    s_height: u32,
+    #[arg(long, default_value_t = 10, help = "max width of smear")]
+    s_width: u32,
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "dont allow blending calculations to overflow"
+    )]
+    no_overflow: bool,
 }
 
 fn main() {
     let args = Args::parse();
+
+    if args.chance < 0. || args.chance > 1. {
+        eprintln!("please provide a chance value between 0.0 and 1.0");
+        return;
+    }
 
     let mut in_file = open(args.input_file)
         .expect("could not open file")
@@ -38,24 +47,18 @@ fn main() {
 
     for (x, y, p) in pixels {
         if rng.random::<f32>() <= args.chance {
-            let smear_len = (args.s_height * rng.random::<f32>()).ceil() as u32 / 2;
-            for newy in y - smear_len..=y + smear_len {
-                if newy >= height {
-                    break;
-                }
-                let s_width = ((args.s_width - 1.) * rng.random::<f32>()).ceil() as u32;
-                for newx in x - s_width..=x + s_width {
-                    if newx >= width {
-                        break;
-                    }
+            let smear_len = args.s_height / ((rng.random::<u32>() % 40) + 2);
+            for newy in y - smear_len..(y + smear_len).min(height - 2) {
+                let s_width = args.s_width / ((rng.random::<u32>() % 40) + 2);
+                for newx in x - s_width..(x + s_width).min(width - 2) {
                     let pix = in_file.get_pixel_mut(newx, newy);
-                    if args.allow_overflow {
-                        for (i, channel) in pix.0.into_iter().enumerate() {
-                            pix.0[i] = (p.0[i] + channel) / 2;
+                    if args.no_overflow {
+                        for i in 0..3 {
+                            pix.0[i] = ((p.0[i] as u16 + pix.0[i] as u16) / 2) as u8;
                         }
                     } else {
-                        for (i, channel) in pix.0.into_iter().enumerate() {
-                            pix.0[i] = ((p.0[i] as u16 + channel as u16) / 2) as u8;
+                        for i in 0..3 {
+                            pix.0[i] = (p.0[i] + pix.0[i]) / 2;
                         }
                     }
                 }
